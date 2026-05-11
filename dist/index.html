@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>rental-scraper report</title>
+<style>
+:root {
+    --bg: #0e1116; --panel: #161b22; --panel2: #1c222b; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --link: #58a6ff;
+    --chip-bg: #1f6feb24; --chip-fg: #58a6ff; --chip-border: #1f6feb44;
+    --pos: #3fb950; --warn: #d29922; --bad: #f85149;
+    --zillow: #006aff; --craigslist: #551a8b;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 24px; }
+.wrap { max-width: 1400px; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+header h1 { margin: 0; font-size: 22px; }
+header .stamp { color: var(--muted); font-size: 12px; }
+.summary-row { display: grid; grid-template-columns: minmax(220px, auto) 1fr; gap: 16px; margin-bottom: 24px; position: sticky; top: 0; z-index: 10; }
+@media (max-width: 800px) { .summary-row { grid-template-columns: 1fr; } }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; padding: 14px 18px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; align-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.stat { display: flex; align-items: baseline; gap: 6px; }
+.stat .n { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stat .label { font-size: 11px; color: var(--muted); }
+.stat.good .n { color: var(--pos); }
+.stat.warn .n { color: var(--warn); }
+.section-title { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin: 24px 0 12px; }
+.controls { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.controls-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer; user-select: none; }
+.controls-head .toggle { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; }
+.controls-head .toggle .caret { display: inline-block; transition: transform 0.15s; }
+.controls.open .controls-head .toggle .caret { transform: rotate(90deg); }
+.controls-head .sort-inline { margin-left: 4px; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.controls-head .actions-row { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+.controls-body { display: none; padding: 0 16px 16px; border-top: 1px solid var(--border); }
+.controls.open .controls-body { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-end; padding-top: 16px; }
+.control-group { display: flex; flex-direction: column; gap: 6px; }
+.control-group label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.control-group .row { display: flex; gap: 6px; align-items: center; }
+.controls input, .controls select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; font-size: 13px; font-family: inherit; }
+.controls input { width: 84px; font-variant-numeric: tabular-nums; }
+.controls input::placeholder { color: #4d5663; }
+.controls input:focus, .controls select:focus { outline: none; border-color: var(--link); }
+.controls .range-sep { color: var(--muted); }
+.controls .cities { flex: 1 1 100%; }
+.controls .city-list { display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.controls .city-list::-webkit-scrollbar { height: 6px; }
+.controls .city-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.controls .city-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; padding: 5px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; user-select: none; transition: border-color 0.1s, color 0.1s; white-space: nowrap; flex-shrink: 0; }
+.controls .city-check input { width: auto; margin: 0; cursor: pointer; }
+.controls .city-check.checked { border-color: var(--link); color: var(--link); background: #1f6feb14; }
+.controls .match-count { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.controls .reset-btn { background: var(--bg); color: var(--text); border: 1px solid var(--border); padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: inherit; }
+.controls .reset-btn:hover { border-color: var(--link); color: var(--link); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+.card.seen { border-color: var(--warn); }
+.card .photo { height: 200px; background: #000; background-size: cover; background-position: center; position: relative; }
+.card .photo .badge { position: absolute; top: 8px; left: 8px; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: white; }
+.card .photo .badge.zillow { background: var(--zillow); }
+.card .photo .badge.craigslist { background: var(--craigslist); }
+.card .photo .seen-tag { position: absolute; top: 8px; right: 8px; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; background: var(--warn); color: #1a1206; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+.card .photo .photo-count { position: absolute; bottom: 8px; right: 8px; padding: 2px 6px; border-radius: 4px; font-size: 11px; background: rgba(0,0,0,0.7); }
+.card .photo .city-tag { position: absolute; bottom: 8px; left: 8px; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; background: rgba(0,0,0,0.7); color: white; text-transform: capitalize; }
+.card .body { padding: 14px; flex: 1; display: flex; flex-direction: column; }
+.card .price-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.card .price { font-size: 20px; font-weight: 600; }
+.card .view-link { font-size: 12px; color: var(--link); text-decoration: none; white-space: nowrap; }
+.card .view-link:hover { text-decoration: underline; }
+.card .specs-line { font-size: 13px; color: var(--muted); margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.card .specs-line .fresh { color: var(--pos); }
+.card .specs-line .sep { color: #4d5663; }
+.card .addr { font-size: 13px; margin-bottom: 8px; }
+.card .addr a { color: var(--text); text-decoration: none; border-bottom: 1px dotted #4d5663; }
+.card .addr a:hover { color: var(--link); border-bottom-color: var(--link); }
+.card .flags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.card .chip { background: var(--chip-bg); color: var(--chip-fg); border: 1px solid var(--chip-border); padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+.card .chip.distance { background: #3fb95024; color: var(--pos); border-color: #3fb95044; font-variant-numeric: tabular-nums; }
+.card .chip.warn { background: #d2992224; color: var(--warn); border-color: #d2992244; }
+.card .chip.unknown { background: #8b949e1f; color: var(--muted); border-color: #8b949e33; }
+.card .avail { font-size: 12px; margin-bottom: 8px; font-variant-numeric: tabular-nums; }
+.card .avail.late { color: var(--warn); }
+.card .avail.ideal { color: var(--pos); }
+.card .desc { font-size: 12px; color: var(--muted); margin-bottom: 12px; flex: 1; max-height: 80px; overflow: hidden; position: relative; }
+.card .desc.empty { font-style: italic; color: #555; }
+.card .desc::after { content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 24px; background: linear-gradient(transparent, var(--panel)); pointer-events: none; }
+.rejected-list { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 0; overflow: hidden; }
+.rejected-list details summary { cursor: pointer; padding: 12px 16px; font-size: 13px; color: var(--muted); border-bottom: 1px solid transparent; }
+.rejected-list details[open] summary { border-bottom-color: var(--border); }
+.rejected-list table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.rejected-list td { padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--muted); }
+.rejected-list td:first-child { color: var(--bad); font-family: ui-monospace, "SF Mono", monospace; white-space: nowrap; }
+.rejected-list td a { color: var(--link); text-decoration: none; }
+.empty-state { padding: 32px; text-align: center; color: var(--muted); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; }
+</style></head><body><div class='wrap'>
+<header>
+<h1>🏠 rental-scraper report</h1>
+<span class='stamp'>generated 2026-05-11 12:11:47 · ≤$12,000/mo · 3+BR / 2+BA · SFH · within 6mi of Synapse · move-in ≤ 2026-07-01 (+grace)</span>
+</header>
+<div class='summary-row'><div class='stats'><div class='stat'><span class='n'>28</span><span class='label'>raw</span></div><div class='stat good'><span class='n'>5</span><span class='label'>new</span></div><div class='stat warn'><span class='n'>9</span><span class='label'>seen</span></div><div class='stat'><span class='n'>14</span><span class='label'>rejected</span></div></div><div class='controls' id='controls'>
+      <div class='controls-head' id='controls-toggle'>
+        <span class='toggle'><span class='caret'>▶</span> Filters</span>
+        <div class='sort-inline'>
+          <span>Sort:</span>
+          <select id='sort-mode'>
+            <option value='fresh'>Newest first</option>
+            <option value='stale'>Oldest first</option>
+            <option value='price-asc'>Price (low → high)</option>
+            <option value='price-desc'>Price (high → low)</option>
+            <option value='sqft-desc'>Sqft (large → small)</option>
+            <option value='sqft-asc'>Sqft (small → large)</option>
+            <option value='distance-asc'>Distance (near → far)</option>
+            <option value='distance-desc'>Distance (far → near)</option>
+          </select>
+        </div>
+        <div class='actions-row'>
+          <span class='match-count' id='match-count'></span>
+          <button class='reset-btn' id='reset-btn' type='button'>Reset</button>
+        </div>
+      </div>
+      <div class='controls-body'>
+        <div class='control-group'>
+          <label>Price ($/mo)</label>
+          <div class='row'>
+            <input type='number' id='price-min' placeholder='min'>
+            <span class='range-sep'>–</span>
+            <input type='number' id='price-max' placeholder='max'>
+          </div>
+        </div>
+        <div class='control-group'>
+          <label>Sqft</label>
+          <div class='row'>
+            <input type='number' id='sqft-min' placeholder='min'>
+            <span class='range-sep'>–</span>
+            <input type='number' id='sqft-max' placeholder='max'>
+          </div>
+        </div>
+        <div class='control-group'>
+          <label>Distance (mi)</label>
+          <div class='row'>
+            <input type='number' step='0.1' id='dist-min' placeholder='min'>
+            <span class='range-sep'>–</span>
+            <input type='number' step='0.1' id='dist-max' placeholder='max'>
+          </div>
+        </div>
+        <div class='control-group cities'>
+          <label>Cities</label>
+          <div class='city-list'><label class='city-check checked'><input type='checkbox' class='city-cb' value='atherton' checked>Atherton</label><label class='city-check checked'><input type='checkbox' class='city-cb' value='belmont' checked>Belmont</label><label class='city-check checked'><input type='checkbox' class='city-cb' value='menlo park' checked>Menlo Park</label><label class='city-check checked'><input type='checkbox' class='city-cb' value='palo alto' checked>Palo Alto</label><label class='city-check checked'><input type='checkbox' class='city-cb' value='redwood city' checked>Redwood City</label><label class='city-check checked'><input type='checkbox' class='city-cb' value='san carlos' checked>San Carlos</label></div>
+        </div>
+      </div>
+    </div></div>
+<div class='section-title'>Matches</div>
+<div class='grid'>
+<div class='card seen' data-price='8900' data-sqft='2780' data-distance='2.80' data-days='0' data-city='menlo park'><div class='photo' style="background-image: url('https://photos.zillowstatic.com/fp/d3da3a7301e0a0e7e65b64ce32f494f6-p_e.jpg');"><div class='badge zillow'>zillow</div><div class='city-tag'>Menlo Park</div><div class='seen-tag'>SEEN</div><div class='photo-count'>📷 1</div></div><div class='body'><div class='price-row'><span class='price'>$8,900/mo</span><a class='view-link' href='https://www.zillow.com/homedetails/1785-Holly-Ave-Menlo-Park-CA-94025/15595170_zpid/' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>4 bed</span><span class='sep'>·</span><span>3 bath</span><span class='sep'>·</span><span>2,780 sqft</span><span class='sep'>·</span><span class='fresh'>posted today</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=1785%20Holly%20Ave%2C%20Menlo%20Park%2C%20CA%2094025' target='_blank' rel='noopener' title='Open in Google Maps'>1785 Holly Ave, Menlo Park, CA 94025</a></div><div class='flags'><span class='chip distance'>2.8 mi from Synapse</span></div><div class='desc empty'>(no description from search result)</div></div></div>
+<div class='card seen' data-price='7800' data-sqft='1600' data-distance='5.58' data-days='0' data-city='palo alto'><div class='photo' style="background-image: url('https://photos.zillowstatic.com/fp/432c8b02b1459402854a543d6a89dbaa-p_e.jpg');"><div class='badge zillow'>zillow</div><div class='city-tag'>Palo Alto</div><div class='seen-tag'>SEEN</div><div class='photo-count'>📷 1</div></div><div class='body'><div class='price-row'><span class='price'>$7,800/mo</span><a class='view-link' href='https://www.zillow.com/homedetails/894-Ames-Ave-Palo-Alto-CA-94303/19500495_zpid/' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>4 bed</span><span class='sep'>·</span><span>3 bath</span><span class='sep'>·</span><span>1,600 sqft</span><span class='sep'>·</span><span class='fresh'>posted today</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=894%20Ames%20Ave%2C%20Palo%20Alto%2C%20CA%2094303' target='_blank' rel='noopener' title='Open in Google Maps'>894 Ames Ave, Palo Alto, CA 94303</a></div><div class='flags'><span class='chip distance'>5.6 mi from Synapse</span></div><div class='desc empty'>(no description from search result)</div></div></div>
+<div class='card' data-price='11000' data-sqft='2200' data-distance='1.45' data-days='0' data-city='atherton'><div class='photo' style="background-image: url('https://photos.zillowstatic.com/fp/879213675682f963960ca48d15405a8b-p_e.jpg');"><div class='badge zillow'>zillow</div><div class='city-tag'>Atherton</div><div class='photo-count'>📷 1</div></div><div class='body'><div class='price-row'><span class='price'>$11,000/mo</span><a class='view-link' href='https://www.zillow.com/homedetails/27-Victoria-Dr-Atherton-CA-94027/15594178_zpid/' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>4 bed</span><span class='sep'>·</span><span>3 bath</span><span class='sep'>·</span><span>2,200 sqft</span><span class='sep'>·</span><span class='fresh'>posted today</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=27%20Victoria%20Dr%2C%20Atherton%2C%20CA%2094027' target='_blank' rel='noopener' title='Open in Google Maps'>27 Victoria Dr, Atherton, CA 94027</a></div><div class='flags'><span class='chip distance'>1.4 mi from Synapse</span></div><div class='desc empty'>(no description from search result)</div></div></div>
+<div class='card seen' data-price='10000' data-sqft='2500' data-distance='2.66' data-days='0' data-city='menlo park'><div class='photo' style="background-image: url('https://photos.zillowstatic.com/fp/40b65327cfd0b717bbee29ba022dd714-p_e.jpg');"><div class='badge zillow'>zillow</div><div class='city-tag'>Menlo Park</div><div class='seen-tag'>SEEN</div><div class='photo-count'>📷 1</div></div><div class='body'><div class='price-row'><span class='price'>$10,000/mo</span><a class='view-link' href='https://www.zillow.com/homedetails/16-Palm-Ct-Menlo-Park-CA-94025/15595092_zpid/' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>3 bed</span><span class='sep'>·</span><span>3 bath</span><span class='sep'>·</span><span>2,500 sqft</span><span class='sep'>·</span><span class='fresh'>posted today</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=16%20Palm%20Ct%2C%20Menlo%20Park%2C%20CA%2094025' target='_blank' rel='noopener' title='Open in Google Maps'>16 Palm Ct, Menlo Park, CA 94025</a></div><div class='flags'><span class='chip distance'>2.7 mi from Synapse</span></div><div class='desc empty'>(no description from search result)</div></div></div>
+<div class='card seen' data-price='7998' data-sqft='1762' data-distance='5.49' data-days='1' data-city='palo alto'><div class='photo' style="background-image: url('https://photos.zillowstatic.com/fp/08ee1f7994dc735e194a20ee32ac86ef-p_e.jpg');"><div class='badge zillow'>zillow</div><div class='city-tag'>Palo Alto</div><div class='seen-tag'>SEEN</div><div class='photo-count'>📷 1</div></div><div class='body'><div class='price-row'><span class='price'>$7,998/mo</span><a class='view-link' href='https://www.zillow.com/homedetails/3392-Saint-Michael-Dr-Palo-Alto-CA-94306/19501611_zpid/' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>3 bed</span><span class='sep'>·</span><span>2 bath</span><span class='sep'>·</span><span>1,762 sqft</span><span class='sep'>·</span><span class='fresh'>1 day ago</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=3392%20Saint%20Michael%20Dr%2C%20Palo%20Alto%2C%20CA%2094306' target='_blank' rel='noopener' title='Open in Google Maps'>3392 Saint Michael Dr, Palo Alto, CA 94306</a></div><div class='flags'><span class='chip distance'>5.5 mi from Synapse</span></div><div class='desc empty'>(no description from search result)</div></div></div>
+<div class='card seen' data-price='7950' data-sqft='2890' data-distance='1.81' data-days='1' data-city='atherton'><div class='photo' style="background-image: url('https://photos.zillowstatic.com/fp/46002fe33eab7251ea7991a570e38685-p_e.jpg');"><div class='badge zillow'>zillow</div><div class='city-tag'>Atherton</div><div class='seen-tag'>SEEN</div><div class='photo-count'>📷 1</div></div><div class='body'><div class='price-row'><span class='price'>$7,950/mo</span><a class='view-link' href='https://www.zillow.com/homedetails/198-Selby-Ln-Atherton-CA-94027/15578144_zpid/' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>5 bed</span><span class='sep'>·</span><span>4 bath</span><span class='sep'>·</span><span>2,890 sqft</span><span class='sep'>·</span><span class='fresh'>1 day ago</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=198%20Selby%20Ln%2C%20Atherton%2C%20CA%2094027' target='_blank' rel='noopener' title='Open in Google Maps'>198 Selby Ln, Atherton, CA 94027</a></div><div class='flags'><span class='chip distance'>1.8 mi from Synapse</span></div><div class='desc empty'>(no description from search result)</div></div></div>
+<div class='card seen' data-price='7450' data-sqft='1929' data-distance='5.02' data-days='2' data-city='belmont'><div class='photo' style="background-image: url('https://photos.zillowstatic.com/fp/9fd95865080f21e945ebd45ce70553e5-p_e.jpg');"><div class='badge zillow'>zillow</div><div class='city-tag'>Belmont</div><div class='seen-tag'>SEEN</div><div class='photo-count'>📷 1</div></div><div class='body'><div class='price-row'><span class='price'>$7,450/mo</span><a class='view-link' href='https://www.zillow.com/homedetails/1241-Elmer-St-Belmont-CA-94002/15540450_zpid/' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>4 bed</span><span class='sep'>·</span><span>3 bath</span><span class='sep'>·</span><span>1,929 sqft</span><span class='sep'>·</span><span class='fresh'>2 days ago</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=1241%20Elmer%20St%2C%20Belmont%2C%20CA%2094002' target='_blank' rel='noopener' title='Open in Google Maps'>1241 Elmer St, Belmont, CA 94002</a></div><div class='flags'><span class='chip distance'>5.0 mi from Synapse</span></div><div class='desc empty'>(no description from search result)</div></div></div>
+<div class='card seen' data-price='7000' data-sqft='1520' data-distance='4.21' data-days='2' data-city='san carlos'><div class='photo' style="background-image: url('https://photos.zillowstatic.com/fp/db00559789ca45bdfbb1090098eeafe4-p_e.jpg');"><div class='badge zillow'>zillow</div><div class='city-tag'>San Carlos</div><div class='seen-tag'>SEEN</div><div class='photo-count'>📷 1</div></div><div class='body'><div class='price-row'><span class='price'>$7,000/mo</span><a class='view-link' href='https://www.zillow.com/homedetails/107-Vista-Del-Grande-San-Carlos-CA-94070/15556423_zpid/' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>3 bed</span><span class='sep'>·</span><span>2 bath</span><span class='sep'>·</span><span>1,520 sqft</span><span class='sep'>·</span><span class='fresh'>2 days ago</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=107%20Vista%20Del%20Grande%2C%20San%20Carlos%2C%20CA%2094070' target='_blank' rel='noopener' title='Open in Google Maps'>107 Vista Del Grande, San Carlos, CA 94070</a></div><div class='flags'><span class='chip distance'>4.2 mi from Synapse</span></div><div class='desc empty'>(no description from search result)</div></div></div>
+<div class='card seen' data-price='6400' data-sqft='1700' data-distance='3.88' data-days='2' data-city='san carlos'><div class='photo' style="background-image: url('https://photos.zillowstatic.com/fp/969cc185812c751fcb7fb5e127168a73-p_e.jpg');"><div class='badge zillow'>zillow</div><div class='city-tag'>San Carlos</div><div class='seen-tag'>SEEN</div><div class='photo-count'>📷 1</div></div><div class='body'><div class='price-row'><span class='price'>$6,400/mo</span><a class='view-link' href='https://www.zillow.com/homedetails/924-Alameda-San-Carlos-CA-94070/462307256_zpid/' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>3 bed</span><span class='sep'>·</span><span>2 bath</span><span class='sep'>·</span><span>1,700 sqft</span><span class='sep'>·</span><span class='fresh'>2 days ago</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=924%20Alameda%2C%20San%20Carlos%2C%20CA%2094070' target='_blank' rel='noopener' title='Open in Google Maps'>924 Alameda, San Carlos, CA 94070</a></div><div class='flags'><span class='chip distance'>3.9 mi from Synapse</span></div><div class='desc empty'>(no description from search result)</div></div></div>
+<div class='card seen' data-price='6500' data-sqft='1970' data-distance='4.49' data-days='2' data-city='redwood city'><div class='photo' style="background-image: url('https://images.craigslist.org/00S0S_9MLOKbAr5ue_0ew0aT_600x450.jpg');"><div class='badge craigslist'>craigslist</div><div class='city-tag'>Redwood City</div><div class='seen-tag'>SEEN</div><div class='photo-count'>📷 20</div></div><div class='body'><div class='price-row'><span class='price'>$6,500/mo</span><a class='view-link' href='https://sfbay.craigslist.org/pen/apa/d/redwood-city-3br-25ba-two-story-home-in/7933040373.html' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>3 bed</span><span class='sep'>·</span><span>3 bath</span><span class='sep'>·</span><span>1,970 sqft</span><span class='sep'>·</span><span class='fresh'>2 days ago</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=22%20Barcelona%20Circle%20near%20Martinique%20Drive%2C%20redwood%20city%2C%20CA' target='_blank' rel='noopener' title='Open in Google Maps'>22 Barcelona Circle near Martinique Drive</a></div><div class='avail ideal'>📅 available 2026-05-15</div><div class='flags'><span class='chip distance'>4.5 mi from Synapse</span><span class='chip'>+renovation</span><span class='chip'>+backyard</span></div><div class='desc'>SCHEDULE A SHOWING
+at:
+http://schedule-a-viewing.com/lc/573a06102d
+Please copy-and-paste this link into the address bar on your web browser.
+3BR/2.5BA, two story home in Redwood Shores with water views
+22 Barcelona Circle, Redwood City, CA, 94065
+$6500 per month
+Available May 15th
+3 beds, 2 full and…</div></div></div>
+<div class='card' data-price='8500' data-sqft='416' data-distance='3.09' data-days='16' data-city='palo alto'><div class='photo' style="background-image: url('https://images.craigslist.org/00z0z_gWcWuaR8Z6i_0j10bq_600x450.jpg');"><div class='badge craigslist'>craigslist</div><div class='city-tag'>Palo Alto</div><div class='photo-count'>📷 7</div></div><div class='body'><div class='price-row'><span class='price'>$8,500/mo</span><a class='view-link' href='https://sfbay.craigslist.org/pen/apa/d/stanford-beautiful-truckee-mountain-home/7930052371.html' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>5 bed</span><span class='sep'>·</span><span>5 bath</span><span class='sep'>·</span><span>416 sqft</span><span class='sep'>·</span><span class=''>16 days ago</span></div><div class='addr'>(no street address)</div><div class='flags'><span class='chip distance'>3.1 mi from Synapse</span></div><div class='desc'>Are you ready to get out of the rat race and enjoy living in the beautiful Lake Tahoe area?
+5 bed
+4.5 Bath, jetted tubs in all
+Hot Tub
+3 decks
+Gourmet kitchen
+Formal dining
+Butlers pantry with warming drawer
+Giant Greatroom with huge fireplace and seating hearth
+Loft-a second great room upstairs
+Exo…</div></div></div>
+<div class='card' data-price='9400' data-sqft='0' data-distance='2.51' data-days='26' data-city='redwood city'><div class='photo' style="background-image: url('https://images.craigslist.org/00s0s_i0kGn0HxMQe_0jm0cS_600x450.jpg');"><div class='badge craigslist'>craigslist</div><div class='city-tag'>Redwood City</div><div class='photo-count'>📷 24</div></div><div class='body'><div class='price-row'><span class='price'>$9,400/mo</span><a class='view-link' href='https://sfbay.craigslist.org/pen/apa/d/atherton-furnished-monthly-br-plus/7927830570.html' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>4 bed</span><span class='sep'>·</span><span>2 bath</span><span class='sep'>·</span><span class=''>26 days ago</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=google%20map%EE%A4%93%2C%20redwood%20city%2C%20CA' target='_blank' rel='noopener' title='Open in Google Maps'>google map</a></div><div class='flags'><span class='chip distance'>2.5 mi from Synapse</span><span class='chip'>+renovation</span><span class='chip'>+backyard</span></div><div class='desc'>Furnished boho chic monthly rental bordering Woodside and Atherton, top West side location on a quiet private street. Completely flat front and back gardens, huge 10,000 plus sq ft property.
+This lovingly maintained, humble mid-century rancher is a three-bedroom, two-bathroom home with a separate of…</div></div></div>
+<div class='card' data-price='8400' data-sqft='2548' data-distance='5.94' data-days='6' data-city='palo alto'><div class='photo' style="background-image: url('https://images.craigslist.org/00e0e_g46c9gIzjjL_0pO0ew_600x450.jpg');"><div class='badge craigslist'>craigslist</div><div class='city-tag'>Palo Alto</div><div class='photo-count'>📷 6</div></div><div class='body'><div class='price-row'><span class='price'>$8,400/mo</span><a class='view-link' href='https://sfbay.craigslist.org/pen/apa/d/palo-alto-spacious-palo-alto-executive/7932194211.html' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>6 bed</span><span class='sep'>·</span><span>3 bath</span><span class='sep'>·</span><span>2,548 sqft</span><span class='sep'>·</span><span class=''>6 days ago</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=Ross%20road%20near%20East%20Meadow%2C%20palo%20alto%2C%20CA' target='_blank' rel='noopener' title='Open in Google Maps'>Ross road near East Meadow</a></div><div class='avail ideal'>📅 available 2026-06-01</div><div class='flags'><span class='chip distance'>5.9 mi from Synapse</span><span class='chip'>+backyard</span></div><div class='desc'>Amazing Spacious
+Palo Alto Executive home.
+Excellent WFH location
+Big Pool!
+6+bdrms!
+Located in a desirable Palo Alto neighborhood,
+This beautiful two-story, 6+ bedroom and 3 bathroom home is available for rent!
+Current residents are Tesla interns.
+Perfect for Stanford Graduates, groups,
+and GSB stu…</div></div></div>
+<div class='card' data-price='10400' data-sqft='1808' data-distance='0.16' data-days='5' data-city='menlo park'><div class='photo' style="background-image: url('https://images.craigslist.org/00i0i_7gwhms7XOfD_0CI0t2_600x450.jpg');"><div class='badge craigslist'>craigslist</div><div class='city-tag'>Menlo Park</div><div class='photo-count'>📷 20</div></div><div class='body'><div class='price-row'><span class='price'>$10,400/mo</span><a class='view-link' href='https://sfbay.craigslist.org/pen/apa/d/menlo-park-fully-remodeled-single-level/7932372563.html' target='_blank' rel='noopener'>view original →</a></div><div class='specs-line'><span>3 bed</span><span class='sep'>·</span><span>2 bath</span><span class='sep'>·</span><span>1,808 sqft</span><span class='sep'>·</span><span class=''>5 days ago</span></div><div class='addr'><a href='https://www.google.com/maps/search/?api=1&amp;query=7trh%20Av%20near%20Park%20Road%2C%20menlo%20park%2C%20CA' target='_blank' rel='noopener' title='Open in Google Maps'>7trh Av near Park Road</a></div><div class='flags'><span class='chip distance'>0.2 mi from Synapse</span><span class='chip'>+renovation</span></div><div class='desc'>Welcome to this amazing totally remodeled and updated single level, single family detached home in Menlo Park!
+*Approx. 1,808 sqft of living space on a 6,000+/- sqft lot
+*3 bedrooms
+*3 full bathrooms (contemporary style)
+*Wide Plank Hardwood flooring throughout
+*Living Room, Dining Room and Family R…</div></div></div>
+</div>
+<div class='section-title'>Rejected</div>
+<div class='rejected-list'><details><summary>
+14 listings filtered out (click to expand)
+</summary><table>
+<tr><td>no_coordinates</td><td>[zillow]</td><td>(undisclosed Address), Foster City, CA 94404</td><td><a href='https://www.zillow.com/homedetails/Foster-City-CA-94404/15612887_zpid/' target='_blank'>open</a></td></tr>
+<tr><td>too_far (7.3mi &gt; 6.0mi)</td><td>[zillow]</td><td>1063 Annapolis Dr, San Mateo, CA 94403</td><td><a href='https://www.zillow.com/homedetails/1063-Annapolis-Dr-San-Mateo-CA-94403/15538248_zpid/' target='_blank'>open</a></td></tr>
+<tr><td>too_far (7.8mi &gt; 6.0mi)</td><td>[zillow]</td><td>411 Cecelia Way, Los Altos, CA 94022</td><td><a href='https://www.zillow.com/homedetails/411-Cecelia-Way-Los-Altos-CA-94022/19524657_zpid/' target='_blank'>open</a></td></tr>
+<tr><td>price_under_min (4400 &lt; 6000)</td><td>[zillow]</td><td>1040 Bradley Way, Palo Alto, CA 94303</td><td><a href='https://www.zillow.com/homedetails/1040-Bradley-Way-Palo-Alto-CA-94303/462307084_zpid/' target='_blank'>open</a></td></tr>
+<tr><td>price_under_min (4650 &lt; 6000)</td><td>[craigslist]</td><td>807 norma lane</td><td><a href='https://sfbay.craigslist.org/pen/apa/d/san-mateo-3b25b-townhouse-for-rent/7933419701.html' target='_blank'>open</a></td></tr>
+<tr><td>price_under_min (4800 &lt; 6000)</td><td>[craigslist]</td><td>2130 Valleywood</td><td><a href='https://sfbay.craigslist.org/pen/apa/d/san-bruno-remodeled-single-family-home/7933340292.html' target='_blank'>open</a></td></tr>
+<tr><td>too_far (12.6mi &gt; 6.0mi)</td><td>[craigslist]</td><td>1625 Coronado Way</td><td><a href='https://sfbay.craigslist.org/pen/apa/d/burlingame-beautiful-3br-3ba-single/7933110280.html' target='_blank'>open</a></td></tr>
+<tr><td>exclude_keyword (&#x27;no pets&#x27;)</td><td>[craigslist]</td><td>Alameda near Melendy</td><td><a href='https://sfbay.craigslist.org/pen/apa/d/san-carlos-br-2ba-charming-updated/7933101238.html' target='_blank'>open</a></td></tr>
+<tr><td>too_far (9.1mi &gt; 6.0mi)</td><td>[craigslist]</td><td>7 treetop ln</td><td><a href='https://sfbay.craigslist.org/pen/apa/d/san-mateo-fully-furnished-spacious/7933036209.html' target='_blank'>open</a></td></tr>
+<tr><td>too_far (7.1mi &gt; 6.0mi)</td><td>[craigslist]</td><td>Elka Ave near Anna Ave</td><td><a href='https://sfbay.craigslist.org/pen/apa/d/mountain-view-furnished-3br-3ba-bonus/7933006631.html' target='_blank'>open</a></td></tr>
+<tr><td>price_under_min (1050 &lt; 6000)</td><td>[craigslist]</td><td>https://sfbay.craigslist.org/pen/apa/d/availnowquiet-and-sunny-bdrm/7932778776.html</td><td><a href='https://sfbay.craigslist.org/pen/apa/d/availnowquiet-and-sunny-bdrm/7932778776.html' target='_blank'>open</a></td></tr>
+<tr><td>price_under_min (3750 &lt; 6000)</td><td>[craigslist]</td><td>google map</td><td><a href='https://sfbay.craigslist.org/pen/apa/d/daly-city-bed-bath-pacifica-newly/7932366922.html' target='_blank'>open</a></td></tr>
+<tr><td>price_under_min (1290 &lt; 6000)</td><td>[craigslist]</td><td>https://sfbay.craigslist.org/pen/apa/d/palo-alto-month-one-furnished-room/7932160136.html</td><td><a href='https://sfbay.craigslist.org/pen/apa/d/palo-alto-month-one-furnished-room/7932160136.html' target='_blank'>open</a></td></tr>
+<tr><td>too_far (8.8mi &gt; 6.0mi)</td><td>[craigslist]</td><td>Springer ter near Springer road</td><td><a href='https://sfbay.craigslist.org/pen/apa/d/mountain-view-4b3b-single-family-house/7932158008.html' target='_blank'>open</a></td></tr>
+</table></details></div>
+<script>
+(function() {
+  const cards = Array.from(document.querySelectorAll('.card[data-price]'));
+  const grid = document.querySelector('.grid');
+  if (!grid || cards.length === 0) return;
+
+  const $ = id => document.getElementById(id);
+  const sortEl = $('sort-mode');
+  const priceMin = $('price-min'), priceMax = $('price-max');
+  const sqftMin = $('sqft-min'), sqftMax = $('sqft-max');
+  const distMin = $('dist-min'), distMax = $('dist-max');
+  const cityChecks = Array.from(document.querySelectorAll('.city-cb'));
+  const matchCountEl = $('match-count');
+  const resetBtn = $('reset-btn');
+
+  const num = (el, key) => {
+    const v = parseFloat(el.dataset[key]);
+    return isNaN(v) ? 0 : v;
+  };
+  const getInput = (el, fallback) => {
+    if (!el.value) return fallback;
+    const n = parseFloat(el.value);
+    return isNaN(n) ? fallback : n;
+  };
+
+  function applyAll() {
+    const pMin = getInput(priceMin, -Infinity);
+    const pMax = getInput(priceMax, Infinity);
+    const sMin = getInput(sqftMin, -Infinity);
+    const sMax = getInput(sqftMax, Infinity);
+    const dMin = getInput(distMin, -Infinity);
+    const dMax = getInput(distMax, Infinity);
+    const sqftMinSet = sqftMin.value !== '';
+    const sqftMaxSet = sqftMax.value !== '';
+
+    const selected = new Set(cityChecks.filter(cb => cb.checked).map(cb => cb.value));
+    const allCitiesOff = selected.size === 0;
+
+    // Visual update for city pills
+    cityChecks.forEach(cb => {
+      cb.closest('.city-check').classList.toggle('checked', cb.checked);
+    });
+
+    let visible = 0;
+    cards.forEach(c => {
+      const price = num(c, 'price');
+      const sqft = num(c, 'sqft');
+      const dist = num(c, 'distance');
+      const city = (c.dataset.city || '').toLowerCase();
+
+      let passes = true;
+      if (price < pMin || price > pMax) passes = false;
+      if (sqft > 0) {
+        if (sqft < sMin || sqft > sMax) passes = false;
+      } else if (sqftMinSet || sqftMaxSet) {
+        // Unknown sqft + user is filtering by sqft → exclude
+        passes = false;
+      }
+      if (dist < dMin || dist > dMax) passes = false;
+      if (allCitiesOff) {
+        passes = false;
+      } else if (city && !selected.has(city)) {
+        passes = false;
+      }
+
+      c.style.display = passes ? '' : 'none';
+      if (passes) visible++;
+    });
+
+    // Sort visible + hidden cards together (so toggling filters preserves order)
+    const mode = sortEl.value;
+    const cmp = pickComparator(mode);
+    if (cmp) {
+      const sorted = cards.slice().sort(cmp);
+      sorted.forEach(c => grid.appendChild(c));
+    }
+
+    matchCountEl.textContent = `Showing ${visible} of ${cards.length}`;
+  }
+
+  function pickComparator(mode) {
+    switch (mode) {
+      case 'price-asc':  return (a,b) => num(a,'price') - num(b,'price');
+      case 'price-desc': return (a,b) => num(b,'price') - num(a,'price');
+      case 'sqft-asc':   return (a,b) => sqftCmp(a, b, true);
+      case 'sqft-desc':  return (a,b) => sqftCmp(a, b, false);
+      case 'distance-asc':  return (a,b) => num(a,'distance') - num(b,'distance');
+      case 'distance-desc': return (a,b) => num(b,'distance') - num(a,'distance');
+      case 'fresh':      return (a,b) => num(a,'days') - num(b,'days');
+      case 'stale':      return (a,b) => num(b,'days') - num(a,'days');
+      default: return null;
+    }
+  }
+
+  function sqftCmp(a, b, asc) {
+    const sa = num(a, 'sqft'), sb = num(b, 'sqft');
+    // Push unknown (0) to the end regardless of direction
+    if (sa === 0 && sb === 0) return 0;
+    if (sa === 0) return 1;
+    if (sb === 0) return -1;
+    return asc ? sa - sb : sb - sa;
+  }
+
+  function reset() {
+    [priceMin, priceMax, sqftMin, sqftMax, distMin, distMax].forEach(el => el.value = '');
+    cityChecks.forEach(cb => cb.checked = true);
+    sortEl.value = 'fresh';
+    applyAll();
+  }
+
+  [priceMin, priceMax, sqftMin, sqftMax, distMin, distMax].forEach(el =>
+    el.addEventListener('input', applyAll));
+  sortEl.addEventListener('change', applyAll);
+  cityChecks.forEach(cb => cb.addEventListener('change', applyAll));
+  resetBtn.addEventListener('click', e => { e.stopPropagation(); reset(); });
+
+  // Collapsable filter panel — toggle on header click, but don't toggle when
+  // the user is interacting with the sort dropdown or reset button.
+  const controls = document.getElementById('controls');
+  const head = document.getElementById('controls-toggle');
+  if (head && controls) {
+    head.addEventListener('click', e => {
+      if (e.target.closest('select, button, input')) return;
+      controls.classList.toggle('open');
+    });
+    sortEl.addEventListener('click', e => e.stopPropagation());
+  }
+
+  applyAll();
+})();
+</script>
+</div></body></html>

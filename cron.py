@@ -1,0 +1,82 @@
+"""End-to-end refresh — GitHub Actions cron entrypoint.
+
+Same pipeline as report.py, but:
+  - Sends Telegram for each new match (not already in seen.db)
+  - Marks seen on notification success (retries on next run if Telegram fails)
+  - Renders HTML using the PRE-run classification so newly-notified listings
+    show without a "seen" tag on this run's snapshot of the site
+"""
+from __future__ import annotations
+
+import os
+import sys
+from datetime import datetime, timezone
+
+from dotenv import load_dotenv
+
+from config import MAX_NEW_PER_POLL, SEEN_DB_PATH
+from notify import notify_new_listing
+from report import _classify, _render
+from scrapers.base import Listing
+from scrapers.craigslist import fetch_craigslist_listings
+from scrapers.zillow import fetch_zillow_listings
+from seen import SeenDB
+
+load_dotenv()
+
+
+def main() -> int:
+    started = datetime.now(timezone.utc).isoformat()
+    print(f"[cron] start {started}")
+
+    raw: list[Listing] = []
+    try:
+        raw.extend(fetch_zillow_listings())
+    except Exception as e:  # noqa: BLE001 — fail-soft per-source
+        print(f"[zillow] FAILED: {e}", file=sys.stderr)
+    try:
+        raw.extend(fetch_craigslist_listings(detail_limit=None))
+    except Exception as e:  # noqa: BLE001
+        print(f"[cl] FAILED: {e}", file=sys.stderr)
+    print(f"[cron] fetched {len(raw)} raw listings")
+
+    db = SeenDB(SEEN_DB_PATH)
+    try:
+        kept_pre, rejected = _classify(raw, db)
+        new_subset = [
+            (l, r, na, cl) for l, r, na, cl, seen in kept_pre if not seen
+        ]
+        print(f"[cron] {len(new_subset)} new matches (cap {MAX_NEW_PER_POLL})")
+
+        notified = 0
+        attempted = 0
+        for listing, result, norm_addr, city_label in new_subset[:MAX_NEW_PER_POLL]:
+            attempted += 1
+            ok = notify_new_listing(listing, result.flags, city_label)
+            if ok:
+                db.mark_seen(listing.id, listing.source, norm_addr, city_label)
+                notified += 1
+                print(f"[cron] notified + marked seen: {listing.id}")
+            else:
+                print(f"[cron] notification failed for {listing.id} — will retry next run")
+        print(f"[cron] notified {notified}/{attempted}")
+    finally:
+        db.close()
+
+    html_text = _render(kept_pre, rejected, raw_count=len(raw))
+
+    with open("report.html", "w") as f:
+        f.write(html_text)
+    print("[cron] wrote report.html")
+
+    os.makedirs("dist", exist_ok=True)
+    with open("dist/index.html", "w") as f:
+        f.write(html_text)
+    print("[cron] wrote dist/index.html")
+
+    print(f"[cron] done {datetime.now(timezone.utc).isoformat()}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

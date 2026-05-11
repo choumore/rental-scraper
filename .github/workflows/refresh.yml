@@ -1,0 +1,57 @@
+name: refresh
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"   # every 4 hours UTC
+  workflow_dispatch:         # manual "Run workflow" button
+
+permissions:
+  contents: write            # cron commits seen.db + dist/index.html
+
+concurrency:
+  group: refresh
+  cancel-in-progress: false  # let in-flight runs finish
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run cron pipeline
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python cron.py
+
+      - name: Commit + push state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add seen.db dist/index.html
+          if git diff --staged --quiet; then
+            echo "[git] no changes to commit"
+          else
+            git commit -m "data: cron refresh $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi
+
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        if: env.VERCEL_TOKEN != ''
+        run: |
+          cd dist
+          npx --yes vercel deploy --prod --yes --token="$VERCEL_TOKEN"
