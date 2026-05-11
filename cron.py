@@ -19,7 +19,7 @@ from notify import notify_new_listing
 from report import _classify, _render
 from scrapers.base import Listing
 from scrapers.craigslist import fetch_craigslist_listings
-from scrapers.zillow import fetch_zillow_listings
+from scrapers.zillow import fetch_zillow_details, fetch_zillow_listings
 from seen import SeenDB
 
 load_dotenv()
@@ -42,6 +42,15 @@ def main() -> int:
 
     db = SeenDB(SEEN_DB_PATH)
     try:
+        # Pre-filter without detail data (Zillow listings have empty description
+        # and no availability/pets at this point). Pre-rejected listings won't
+        # waste detail-actor spend.
+        kept_pre_enrich, _rej_pre = _classify(raw, db)
+        listings_to_enrich = [tup[0] for tup in kept_pre_enrich]
+        fetch_zillow_details(listings_to_enrich)
+
+        # Re-classify now that Zillow listings have availability / pets / description.
+        # Some listings may move from kept to rejected (e.g. available_after_grace).
         kept_pre, rejected = _classify(raw, db)
         new_subset = [
             (l, r, na, cl) for l, r, na, cl, seen in kept_pre if not seen

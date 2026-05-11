@@ -215,4 +215,7 @@ def filter_listing(l: Listing) -> FilterResult:
     if avail.unknown:
         flags["unknown_availability"] = True
 
+    if l.pets_allowed and l.pets_allowed.strip().lower() == "no":
+        return FilterResult(False, "pets_not_allowed", flags)
+
     return FilterResult(True, "ok", flags)

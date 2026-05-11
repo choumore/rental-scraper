@@ -34,6 +34,11 @@ def format_listing_message(
     specs = [f"{listing.beds:g}BR", f"{listing.baths:g}BA"]
     if listing.sqft:
         specs.append(f"{listing.sqft:,} sqft")
+    pets = (listing.pets_allowed or "").strip()
+    if pets.lower() == "no":
+        specs.append("🚫 no pets")
+    elif pets:
+        specs.append(f"🐾 {pets}")
     lines.append(f"{price_html} · {' · '.join(specs)}")
 
     miles = miles_from_synapse(listing.lat, listing.lng)

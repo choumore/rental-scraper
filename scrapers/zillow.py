@@ -17,6 +17,8 @@ from config import (
 )
 from scrapers.base import Listing
 
+DETAIL_ACTOR = "maxcopell/zillow-detail-scraper"
+
 
 def _build_search_url() -> str:
     """Build a Zillow rentals search URL.
@@ -151,6 +153,130 @@ def _to_float_or_none(v: Any) -> float | None:
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def fetch_zillow_details(listings: list[Listing]) -> int:
+    """Enrich Zillow listings IN PLACE with detail-page data via the detail actor.
+
+    Adds: full description, availability_date, pets_allowed, additional photos.
+    Returns count of listings successfully enriched. Skips non-Zillow listings.
+    Cost: ~$0.0017 per Zillow URL. Caller should pass already-filtered listings
+    to avoid paying for detail data we'd reject anyway.
+    """
+    zillow_urls: list[tuple[str, str]] = []  # (zpid, url) pairs
+    for l in listings:
+        if l.source != "zillow":
+            continue
+        if "/homedetails/" not in l.url:
+            continue
+        zpid = l.id.replace("zillow_", "")
+        zillow_urls.append((zpid, l.url))
+
+    if not zillow_urls:
+        return 0
+
+    token = os.environ.get("APIFY_TOKEN")
+    if not token:
+        print("[zillow-detail] APIFY_TOKEN not set; skipping detail enrichment")
+        return 0
+
+    client = ApifyClient(token)
+    print(f"[zillow-detail] fetching {len(zillow_urls)} detail pages via {DETAIL_ACTOR}...")
+    run_input = {"startUrls": [{"url": u} for _zpid, u in zillow_urls]}
+    try:
+        run = client.actor(DETAIL_ACTOR).call(run_input=run_input)
+    except Exception as e:  # noqa: BLE001
+        print(f"[zillow-detail] actor call failed: {e}")
+        return 0
+
+    details_by_zpid: dict[str, dict] = {}
+    for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+        if not isinstance(item, dict) or "error" in item:
+            continue
+        zpid = str(item.get("zpid") or "")
+        if zpid:
+            details_by_zpid[zpid] = item
+
+    enriched = 0
+    for l in listings:
+        if l.source != "zillow":
+            continue
+        zpid = l.id.replace("zillow_", "")
+        detail = details_by_zpid.get(zpid)
+        if not detail:
+            continue
+        _merge_detail(l, detail)
+        enriched += 1
+
+    print(f"[zillow-detail] enriched {enriched}/{len(zillow_urls)} listings")
+    return enriched
+
+
+def _merge_detail(listing: Listing, detail: dict) -> None:
+    """Copy useful fields from a detail-actor result into a Listing in place.
+
+    The fields we care about live under `resoFacts` (not top-level) — that's
+    where Zillow puts MLS-sourced rental data. The actor exposes them as:
+      resoFacts.availabilityDate  — Unix milliseconds epoch
+      resoFacts.allowedPets        — list[str], e.g. ['Cats', 'Small Dogs']
+                                     empty list → no pets allowed
+                                     None → unknown
+    """
+    reso = detail.get("resoFacts") if isinstance(detail.get("resoFacts"), dict) else {}
+
+    avail_ms = reso.get("availabilityDate")
+    if isinstance(avail_ms, (int, float)) and avail_ms > 0:
+        from datetime import datetime, timezone
+        try:
+            listing.available_date = (
+                datetime.fromtimestamp(avail_ms / 1000, tz=timezone.utc).date().isoformat()
+            )
+        except (ValueError, OSError, OverflowError):
+            pass
+
+    desc = detail.get("description")
+    if isinstance(desc, str) and desc.strip():
+        listing.description = desc.strip()
+
+    allowed_pets = reso.get("allowedPets")
+    if isinstance(allowed_pets, list):
+        if allowed_pets:
+            listing.pets_allowed = ", ".join(str(p) for p in allowed_pets if p)
+        else:
+            listing.pets_allowed = "no"
+    # If allowed_pets is None / missing, leave as "" (unknown).
+
+    photos = detail.get("responsivePhotos") or detail.get("photos") or []
+    if isinstance(photos, list) and photos:
+        urls: list[str] = []
+        seen_urls: set[str] = set()
+        for p in photos:
+            url = _photo_url(p)
+            if url and url not in seen_urls:
+                urls.append(url)
+                seen_urls.add(url)
+        if urls:
+            listing.image_urls = urls
+
+
+def _photo_url(p) -> str:
+    if isinstance(p, str) and p.startswith("http"):
+        return p
+    if not isinstance(p, dict):
+        return ""
+    direct = p.get("url") or p.get("href")
+    if isinstance(direct, str) and direct.startswith("http"):
+        return direct
+    mixed = p.get("mixedSources") or {}
+    jpeg = mixed.get("jpeg") if isinstance(mixed, dict) else None
+    if isinstance(jpeg, list) and jpeg:
+        # Pick the largest by width
+        best = max(jpeg, key=lambda x: x.get("width", 0) if isinstance(x, dict) else 0)
+        if isinstance(best, dict):
+            u = best.get("url")
+            if isinstance(u, str) and u.startswith("http"):
+                return u
+    return ""
 
 
 def _extract_posted_at(item: dict, home_info: dict) -> str:

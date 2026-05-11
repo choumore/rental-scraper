@@ -21,3 +21,4 @@ class Listing:
     lng: float | None = None
     sqft: int = 0
     available_date: str = ""  # ISO YYYY-MM-DD; empty if unparseable
+    pets_allowed: str = ""    # "yes" / "no" / "" (unknown)

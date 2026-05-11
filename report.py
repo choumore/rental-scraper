@@ -35,7 +35,7 @@ from filters import (
 )
 from scrapers.base import Listing
 from scrapers.craigslist import fetch_craigslist_listings
-from scrapers.zillow import fetch_zillow_listings
+from scrapers.zillow import fetch_zillow_details, fetch_zillow_listings
 from seen import SeenDB
 
 load_dotenv()
@@ -62,6 +62,11 @@ def main() -> int:
 
     db = SeenDB(SEEN_DB_PATH)
     try:
+        # Pre-filter so we only pay the detail-actor for listings that passed
+        # cheap checks (price/beds/baths/distance). Then re-classify with the
+        # enriched data so availability/pets/description filters fire.
+        kept_pre_enrich, _ = _classify(raw, db)
+        fetch_zillow_details([tup[0] for tup in kept_pre_enrich])
         kept, rejected = _classify(raw, db)
     finally:
         db.close()
@@ -563,6 +568,11 @@ def _render_card(
     specs_parts = [f"{listing.beds:g} bed", f"{listing.baths:g} bath"]
     if listing.sqft:
         specs_parts.append(f"{listing.sqft:,} sqft")
+    pets = (listing.pets_allowed or "").strip()
+    if pets.lower() == "no":
+        specs_parts.append("🚫 no pets")
+    elif pets:
+        specs_parts.append(f"🐾 {pets}")
 
     days = _days_old(listing)
     freshness_text = _humanize_days(days)
