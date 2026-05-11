@@ -7,9 +7,9 @@ from typing import Any
 
 from apify_client import ApifyClient
 
+import config
 from config import (
     APIFY_ACTOR,
-    DAYS_ON_ZILLOW,
     MAX_PRICE,
     MIN_BATHS,
     MIN_BEDS,
@@ -52,8 +52,8 @@ def _build_search_url() -> str:
         "beds": {"min": MIN_BEDS},
         "baths": {"min": MIN_BATHS},
     }
-    if DAYS_ON_ZILLOW:
-        filter_state["doz"] = {"value": str(DAYS_ON_ZILLOW)}
+    if config.DAYS_ON_ZILLOW:
+        filter_state["doz"] = {"value": str(config.DAYS_ON_ZILLOW)}
 
     query_state = {
         "isMapVisible": True,
@@ -79,7 +79,7 @@ def fetch_zillow_listings() -> list[Listing]:
         "maxItems": 200,
     }
 
-    print(f"[zillow] running {APIFY_ACTOR} (doz={DAYS_ON_ZILLOW}, bounds={SEARCH_BOUNDS})...")
+    print(f"[zillow] running {APIFY_ACTOR} (doz={config.DAYS_ON_ZILLOW}, bounds={SEARCH_BOUNDS})...")
     run = client.actor(APIFY_ACTOR).call(run_input=run_input)
 
     results: list[Listing] = []
