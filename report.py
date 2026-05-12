@@ -254,6 +254,30 @@ header .stamp { color: var(--muted); font-size: 12px; }
 
 
 _JS = """
+(function relativeStamp() {
+  const el = document.getElementById('relative-stamp');
+  if (!el) return;
+  const iso = el.dataset.iso;
+  if (!iso) return;
+  function fmt() {
+    const generated = new Date(iso);
+    if (isNaN(generated.getTime())) return;
+    const diffMs = Date.now() - generated.getTime();
+    const mins = Math.floor(diffMs / 60000);
+    const hours = Math.floor(mins / 60);
+    const days = Math.floor(hours / 24);
+    let label;
+    if (mins < 1) label = 'just now';
+    else if (mins < 60) label = mins + ' min ago';
+    else if (hours === 1) label = '1 hour ago';
+    else if (hours < 24) label = hours + ' hours ago';
+    else if (days === 1) label = '1 day ago';
+    else label = days + ' days ago';
+    el.textContent = '(' + label + ')';
+  }
+  fmt();
+  setInterval(fmt, 30000);
+})();
 (function() {
   const cards = Array.from(document.querySelectorAll('.card[data-price]'));
   const grid = document.querySelector('.grid');
@@ -391,7 +415,9 @@ def _render(
     rejected: list[tuple[Listing, str]],
     raw_count: int,
 ) -> str:
-    stamp = datetime.now(PACIFIC_TZ).strftime("%Y-%m-%d %H:%M %Z")
+    now_pt = datetime.now(PACIFIC_TZ)
+    stamp = now_pt.strftime("%Y-%m-%d %H:%M %Z")
+    stamp_iso = now_pt.isoformat()
     new_count = sum(1 for *_, already_seen in kept if not already_seen)
     seen_count = sum(1 for *_, already_seen in kept if already_seen)
 
@@ -416,7 +442,10 @@ def _render(
         f"<style>{_CSS}</style></head><body><div class='wrap'>",
         "<header>",
         "<h1>🏠 rental-scraper report</h1>",
-        f"<span class='stamp'>generated {html.escape(stamp)} · ≤${MAX_PRICE:,}/mo · {MIN_BEDS}+BR / {MIN_BATHS}+BA · SFH · within {MAX_DISTANCE_MILES:g}mi of Synapse · move-in ≤ {MOVE_BY_DATE} (+grace)</span>",
+        f"<span class='stamp'>generated {html.escape(stamp)} "
+        f"<span id='relative-stamp' data-iso='{html.escape(stamp_iso)}'></span>"
+        f" · ≤${MAX_PRICE:,}/mo · {MIN_BEDS}+BR / {MIN_BATHS}+BA · SFH · "
+        f"within {MAX_DISTANCE_MILES:g}mi of Synapse · move-in ≤ {MOVE_BY_DATE} (+grace)</span>",
         "</header>",
     ]
 
