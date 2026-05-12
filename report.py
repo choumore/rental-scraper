@@ -16,6 +16,9 @@ import sys
 import urllib.parse
 from datetime import datetime, timezone
 from typing import Iterable
+from zoneinfo import ZoneInfo
+
+PACIFIC_TZ = ZoneInfo("America/Los_Angeles")
 
 from dotenv import load_dotenv
 
@@ -388,7 +391,7 @@ def _render(
     rejected: list[tuple[Listing, str]],
     raw_count: int,
 ) -> str:
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    stamp = datetime.now(PACIFIC_TZ).strftime("%Y-%m-%d %H:%M %Z")
     new_count = sum(1 for *_, already_seen in kept if not already_seen)
     seen_count = sum(1 for *_, already_seen in kept if already_seen)
 
