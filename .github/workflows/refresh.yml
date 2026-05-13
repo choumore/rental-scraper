@@ -2,7 +2,12 @@ name: refresh
 
 on:
   schedule:
-    - cron: "0 */4 * * *"   # every 4 hours UTC
+    # Daytime (8am-8pm PT, every 2h) + single night run at 10pm PT.
+    # UTC times below assume PDT (UTC-7). When DST ends in early November,
+    # subtract 1 hour from each UTC entry below (or just bump them all by +1 in winter).
+    #   15 UTC = 08 PDT   17 = 10 PDT   19 = 12 PDT   21 = 14 PDT
+    #   23 UTC = 16 PDT   01 = 18 PDT   03 = 20 PDT   05 = 22 PDT (the night run)
+    - cron: "0 1,3,5,15,17,19,21,23 * * *"
   workflow_dispatch:         # manual "Run workflow" button
 
 permissions:
