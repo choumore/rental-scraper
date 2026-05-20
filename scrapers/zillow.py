@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.parse
+from decimal import Decimal
 from typing import Any
 
 from apify_client import ApifyClient
@@ -80,7 +81,7 @@ def fetch_zillow_listings() -> list[Listing]:
     }
 
     print(f"[zillow] running {APIFY_ACTOR} (doz={config.DAYS_ON_ZILLOW}, bounds={SEARCH_BOUNDS})...")
-    run = client.actor(APIFY_ACTOR).call(run_input=run_input)
+    run = client.actor(APIFY_ACTOR).call(run_input=run_input, max_total_charge_usd=Decimal("1.00"))
 
     results: list[Listing] = []
     errors = 0
